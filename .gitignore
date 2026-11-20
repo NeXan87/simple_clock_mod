@@ -3,8 +3,9 @@ _build/*
 
 # Резервные копии файлов KiCad
 *.bak
-*-bak
-*-backups
+*-backups/
+*-bak/
+.history/
 
 # Автосохранения и временные файлы редактора
 _autosave*
