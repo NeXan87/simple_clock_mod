@@ -5922,6 +5922,16 @@
 	)
 	(wire
 		(pts
+			(xy 182.88 146.05) (xy 186.69 146.05)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "df91cc3a-67a0-4ad9-9d55-22bfee4acbc1")
+	)
+	(wire
+		(pts
 			(xy 129.54 153.67) (xy 129.54 156.21)
 		)
 		(stroke
@@ -6617,6 +6627,16 @@
 				(justify left)
 			)
 		)
+	)
+	(label "*D5"
+		(at 182.88 146.05 0)
+		(effects
+			(font
+				(size 1 1)
+			)
+			(justify left bottom)
+		)
+		(uuid "43a931a4-6a39-499a-86ad-acf9e37b0bd8")
 	)
 	(label "SEG_A"
 		(at 160.02 43.18 180)
