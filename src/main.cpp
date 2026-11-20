@@ -1,17 +1,20 @@
-#include <Wire.h>
+#include "header_file.h"
+#include <Arduino.h>
+#include <DS3231.h> // https://github.com/NorthernWidget/DS3231
 #include <EEPROM.h>
+#include <Wire.h>
 #include <avr/pgmspace.h>
-#include <DS3231.h>        // https://github.com/NorthernWidget/DS3231
 #include <shButton.h>      // https://github.com/VAleSh-Soft/shButton
 #include <shTaskManager.h> // https://github.com/VAleSh-Soft/shTaskManager
-#include "header_file.h"
+
 #if defined(TM1637_DISPLAY)
 #include "display_TM1637.h"
 #elif defined(MAX72XX_7SEGMENT_DISPLAY) || defined(MAX72XX_MATRIX_DISPLAY)
 #include "display_MAX72xx.h"
 #elif defined(WS2812_MATRIX_DISPLAY)
-#include <FastLED.h> // https://github.com/FastLED/FastLED
 #include "display_WS2812.h"
+#include <FastLED.h> // https://github.com/FastLED/FastLED
+
 #endif
 #ifdef USE_ALARM
 #include "alarm.h"
@@ -31,7 +34,9 @@
 #define ALARM_REPETITION_COUNT 3 // количество повторов сигнала будильника
 #endif
 #define LIGHT_THRESHOLD 300 // порог переключения для датчика света
-#define AUTO_EXIT_TIMEOUT 6 // время автоматического возврата в режим показа текущего времени из любых других режимов при отсутствии активности пользователя, секунд
+#define AUTO_EXIT_TIMEOUT                                                      \
+  6 // время автоматического возврата в режим показа текущего времени из любых
+    // других режимов при отсутствии активности пользователя, секунд
 // ===================================================
 
 #if defined(TM1637_DISPLAY)
@@ -60,9 +65,11 @@ NTCSensor temp_sensor(NTC_PIN, 10000, 9850, 3950);
 
 shTaskManager tasks; // создаем список задач, количество задач укажем в setup()
 
-shHandle rtc_guard;              // опрос микросхемы RTC по таймеру, чтобы не дергать ее откуда попало
-shHandle blink_timer;            // блинк
-shHandle return_to_default_mode; // таймер автовозврата в режим показа времени из любого режима настройки
+shHandle rtc_guard;   // опрос микросхемы RTC по таймеру, чтобы не дергать ее
+                      // откуда попало
+shHandle blink_timer; // блинк
+shHandle return_to_default_mode; // таймер автовозврата в режим показа времени
+                                 // из любого режима настройки
 shHandle set_time_mode;          // режим настройки времени
 shHandle display_guard;          // вывод данных на экран
 #ifdef USE_ALARM
@@ -90,53 +97,41 @@ bool blink_flag = false; // флаг блинка, используется вс
 DateTime curTime;
 
 // ==== класс кнопок с предварительной настройкой ====
-enum ButtonFlag : uint8_t
-{
+enum ButtonFlag : uint8_t {
   BTN_FLAG_NONE, // флаг кнопки - ничего не делать
   BTN_FLAG_NEXT, // флаг кнопки - изменить значение
   BTN_FLAG_EXIT  // флаг кнопки - возврат в режим показа текущего времени
 };
 
-class clcButton : public shButton
-{
+class clcButton : public shButton {
 private:
   ButtonFlag _flag = BTN_FLAG_NONE;
 
 public:
-  clcButton(uint8_t button_pin) : shButton(button_pin)
-  {
+  clcButton(uint8_t button_pin) : shButton(button_pin) {
     shButton::setTimeoutOfLongClick(1000);
     shButton::setLongClickMode(LCM_ONLYONCE);
     shButton::setVirtualClickOn(true);
   }
 
-  ButtonFlag getBtnFlag()
-  {
-    return (_flag);
-  }
+  ButtonFlag getBtnFlag() { return (_flag); }
 
-  void setBtnFlag(ButtonFlag flag)
-  {
-    _flag = flag;
-  }
+  void setBtnFlag(ButtonFlag flag) { _flag = flag; }
 
-  uint8_t getButtonState()
-  {
+  uint8_t getButtonState() {
     uint8_t _state = shButton::getButtonState();
-    switch (_state)
-    {
+    switch (_state) {
     case BTN_DOWN:
     case BTN_DBLCLICK:
     case BTN_LONGCLICK:
-      // в любом режиме, кроме стандартного, каждый клик любой кнопки перезапускает таймер автовыхода в стандартный режим
-      if (tasks.getTaskState(return_to_default_mode))
-      {
+      // в любом режиме, кроме стандартного, каждый клик любой кнопки
+      // перезапускает таймер автовыхода в стандартный режим
+      if (tasks.getTaskState(return_to_default_mode)) {
         tasks.restartTask(return_to_default_mode);
       }
 #ifdef USE_ALARM
       // если сработал будильник, отключить его
-      if (alarm.getAlarmState() == ALARM_YES)
-      {
+      if (alarm.getAlarmState() == ALARM_YES) {
         alarm.setAlarmState(ALARM_ON);
         shButton::resetButtonState();
       }
@@ -148,24 +143,22 @@ public:
 };
 // ===================================================
 
-clcButton btnSet(BTN_SET_PIN);   // кнопка Set - смена режима работы часов
-clcButton btnUp(BTN_UP_PIN);     // кнопка Up - изменение часов/минут в режиме настройки
-clcButton btnDown(BTN_DOWN_PIN); // кнопка Down - изменение часов/минут в режиме настройки
+clcButton btnSet(BTN_SET_PIN); // кнопка Set - смена режима работы часов
+clcButton
+    btnUp(BTN_UP_PIN); // кнопка Up - изменение часов/минут в режиме настройки
+clcButton btnDown(
+    BTN_DOWN_PIN); // кнопка Down - изменение часов/минут в режиме настройки
 
 // ===================================================
-void checkButton()
-{
+void checkButton() {
   checkSetButton();
   checkUpDownButton();
 }
 
-void checkSetButton()
-{
-  switch (btnSet.getButtonState())
-  {
+void checkSetButton() {
+  switch (btnSet.getButtonState()) {
   case BTN_ONECLICK:
-    switch (displayMode)
-    {
+    switch (displayMode) {
     case DISPLAY_MODE_SET_HOUR:
     case DISPLAY_MODE_SET_MINUTE:
 #ifdef USE_CALENDAR
@@ -198,8 +191,7 @@ void checkSetButton()
     }
     break;
   case BTN_DBLCLICK:
-    switch (displayMode)
-    {
+    switch (displayMode) {
     case DISPLAY_MODE_SHOW_TIME:
 #ifdef USE_ALARM
 #ifndef USE_ONECLICK_TO_SET_ALARM
@@ -212,8 +204,7 @@ void checkSetButton()
     }
     break;
   case BTN_LONGCLICK:
-    switch (displayMode)
-    {
+    switch (displayMode) {
     case DISPLAY_MODE_SHOW_TIME:
       displayMode = DISPLAY_MODE_SET_HOUR;
       break;
@@ -244,10 +235,8 @@ void checkSetButton()
   }
 }
 
-void checkUDbtn(clcButton &btn)
-{
-  switch (btn.getLastState())
-  {
+void checkUDbtn(clcButton &btn) {
+  switch (btn.getLastState()) {
   case BTN_DOWN:
   case BTN_DBLCLICK:
     btn.setBtnFlag(BTN_FLAG_NEXT);
@@ -263,30 +252,25 @@ void checkUDbtn(clcButton &btn)
   }
 }
 
-void checkUpDownButton()
-{
+void checkUpDownButton() {
   btnUp.getButtonState();
   btnDown.getButtonState();
 
-  switch (displayMode)
-  {
+  switch (displayMode) {
   case DISPLAY_MODE_SHOW_TIME:
 #ifdef USE_TEMP_DATA
-    if (btnUp.getLastState() == BTN_ONECLICK)
-    {
+    if (btnUp.getLastState() == BTN_ONECLICK) {
       displayMode = DISPLAY_MODE_SHOW_TEMP;
     }
 #endif
 #ifdef USE_CALENDAR
-    if (btnDown.getLastState() == BTN_ONECLICK)
-    {
+    if (btnDown.getLastState() == BTN_ONECLICK) {
       displayMode = DISPLAY_MODE_SHOW_CALENDAR;
     }
 #endif
 #ifdef USE_SET_BRIGHTNESS_MODE
     if (btnUp.isSecondButtonPressed(btnDown, BTN_LONGCLICK) ||
-        btnDown.isSecondButtonPressed(btnUp, BTN_LONGCLICK))
-    {
+        btnDown.isSecondButtonPressed(btnUp, BTN_LONGCLICK)) {
 #ifdef USE_LIGHT_SENSOR
       displayMode = DISPLAY_MODE_SET_BRIGHTNESS_MIN;
 #else
@@ -313,27 +297,23 @@ void checkUpDownButton()
 #endif
   case DISPLAY_MODE_SET_BRIGHTNESS_MAX:
 #endif
-    if (!btnDown.isButtonClosed())
-    {
+    if (!btnDown.isButtonClosed()) {
       checkUDbtn(btnUp);
     }
-    if (!btnUp.isButtonClosed())
-    {
+    if (!btnUp.isButtonClosed()) {
       checkUDbtn(btnDown);
     }
     break;
 #ifdef USE_TEMP_DATA
   case DISPLAY_MODE_SHOW_TEMP:
-    if (btnUp.getLastState() == BTN_ONECLICK)
-    {
+    if (btnUp.getLastState() == BTN_ONECLICK) {
       returnToDefMode();
     }
     break;
 #endif
 #ifdef USE_CALENDAR
   case DISPLAY_MODE_SHOW_CALENDAR:
-    if (btnDown.getLastState() == BTN_ONECLICK)
-    {
+    if (btnDown.getLastState() == BTN_ONECLICK) {
       returnToDefMode();
     }
     break;
@@ -344,39 +324,32 @@ void checkUpDownButton()
 }
 
 // ===================================================
-void rtcNow()
-{
+void rtcNow() {
   curTime = RTC.now();
-  if (displayMode == DISPLAY_MODE_SHOW_TIME)
-  {
+  if (displayMode == DISPLAY_MODE_SHOW_TIME) {
 #if defined(MAX72XX_MATRIX_DISPLAY) || defined(WS2812_MATRIX_DISPLAY)
-    disp.showTime(curTime.hour(), curTime.minute(), curTime.second(), blink_flag);
+    disp.showTime(curTime.hour(), curTime.minute(), curTime.second(),
+                  blink_flag);
 #else
     disp.showTime(curTime.hour(), curTime.minute(), blink_flag);
 #endif
   }
 }
 
-void blink()
-{
+void blink() {
   static uint8_t cur_sec = curTime.second();
   static uint32_t tmr = 0;
-  if (cur_sec != curTime.second())
-  {
+  if (cur_sec != curTime.second()) {
     cur_sec = curTime.second();
     blink_flag = true;
     tmr = millis();
-  }
-  else if (blink_flag && millis() - tmr >= 500)
-  {
+  } else if (blink_flag && millis() - tmr >= 500) {
     blink_flag = false;
   }
 }
 
-void returnToDefMode()
-{
-  switch (displayMode)
-  {
+void returnToDefMode() {
+  switch (displayMode) {
   case DISPLAY_MODE_SET_HOUR:
   case DISPLAY_MODE_SET_MINUTE:
 #ifdef USE_CALENDAR
@@ -415,27 +388,24 @@ void returnToDefMode()
   tasks.stopTask(return_to_default_mode);
 }
 
-void stopSetting(shHandle task)
-{
+void stopSetting(shHandle task) {
   tasks.stopTask(task);
   tasks.stopTask(return_to_default_mode);
 }
 
-void showTimeSetting()
-{
+void showTimeSetting() {
   static bool time_checked = false;
   static uint8_t curHour = 0;
   static uint8_t curMinute = 0;
 #ifdef USE_CALENDAR
-  static const uint8_t PROGMEM days_of_month[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+  static const uint8_t PROGMEM days_of_month[] = {31, 28, 31, 30, 31, 30,
+                                                  31, 31, 30, 31, 30, 31};
 #endif
 
-  if (!tasks.getTaskState(set_time_mode))
-  {
+  if (!tasks.getTaskState(set_time_mode)) {
     tasks.startTask(set_time_mode);
     tasks.startTask(return_to_default_mode);
-    switch (displayMode)
-    {
+    switch (displayMode) {
 #ifdef USE_ALARM
     case DISPLAY_MODE_SET_ALARM_HOUR:
     case DISPLAY_MODE_SET_ALARM_MINUTE:
@@ -452,10 +422,8 @@ void showTimeSetting()
     time_checked = false;
   }
 
-  if (!time_checked)
-  {
-    switch (displayMode)
-    {
+  if (!time_checked) {
+    switch (displayMode) {
     case DISPLAY_MODE_SET_HOUR:
     case DISPLAY_MODE_SET_MINUTE:
       curHour = curTime.hour();
@@ -478,12 +446,9 @@ void showTimeSetting()
   }
 
   // опрос кнопок =====================
-  if (btnSet.getBtnFlag() > BTN_FLAG_NONE)
-  {
-    if (time_checked)
-    {
-      switch (displayMode)
-      {
+  if (btnSet.getBtnFlag() > BTN_FLAG_NONE) {
+    if (time_checked) {
+      switch (displayMode) {
       case DISPLAY_MODE_SET_HOUR:
       case DISPLAY_MODE_SET_MINUTE:
         clock.setHour(curHour);
@@ -515,10 +480,8 @@ void showTimeSetting()
       }
       time_checked = false;
     }
-    if (btnSet.getBtnFlag() == BTN_FLAG_NEXT)
-    {
-      switch (displayMode)
-      {
+    if (btnSet.getBtnFlag() == BTN_FLAG_NEXT) {
+      switch (displayMode) {
       case DISPLAY_MODE_SET_HOUR:
 #ifdef USE_CALENDAR
       case DISPLAY_MODE_SET_MINUTE:
@@ -533,7 +496,8 @@ void showTimeSetting()
         break;
 #ifdef USE_ALARM
       case DISPLAY_MODE_ALARM_ON_OFF:
-        displayMode = (curHour) ? DISPLAY_MODE_SET_ALARM_HOUR : DISPLAY_MODE_SHOW_TIME;
+        displayMode =
+            (curHour) ? DISPLAY_MODE_SET_ALARM_HOUR : DISPLAY_MODE_SHOW_TIME;
         stopSetting(set_time_mode);
         break;
 #endif
@@ -542,20 +506,17 @@ void showTimeSetting()
         stopSetting(set_time_mode);
         break;
       }
-    }
-    else
-    {
+    } else {
       displayMode = DISPLAY_MODE_SHOW_TIME;
       stopSetting(set_time_mode);
     }
     btnSet.setBtnFlag(BTN_FLAG_NONE);
   }
 
-  if ((btnUp.getBtnFlag() == BTN_FLAG_NEXT) || (btnDown.getBtnFlag() == BTN_FLAG_NEXT))
-  {
+  if ((btnUp.getBtnFlag() == BTN_FLAG_NEXT) ||
+      (btnDown.getBtnFlag() == BTN_FLAG_NEXT)) {
     bool dir = btnUp.getBtnFlag() == BTN_FLAG_NEXT;
-    switch (displayMode)
-    {
+    switch (displayMode) {
     case DISPLAY_MODE_SET_HOUR:
 #ifdef USE_ALARM
     case DISPLAY_MODE_SET_ALARM_HOUR:
@@ -577,8 +538,7 @@ void showTimeSetting()
     case DISPLAY_MODE_SET_DAY:
       uint8_t i;
       i = pgm_read_byte(&days_of_month[curMinute - 1]);
-      if (curMinute == 2 && (curTime.year() % 4 == 0))
-      {
+      if (curMinute == 2 && (curTime.year() % 4 == 0)) {
         i++;
       }
       checkData(curHour, i, dir, 1);
@@ -599,8 +559,7 @@ void showTimeSetting()
   }
 
   // вывод данных на экран ============
-  switch (displayMode)
-  {
+  switch (displayMode) {
 #ifdef USE_ALARM
   case DISPLAY_MODE_ALARM_ON_OFF:
     showAlarmState(curHour);
@@ -614,15 +573,10 @@ void showTimeSetting()
 
 #ifdef USE_TEMP_DATA
 #ifdef USE_DS18B20
-void checkDS18b20()
-{
-  temp_sensor.readData();
-}
+void checkDS18b20() { temp_sensor.readData(); }
 #endif
-void showTemp()
-{
-  if (!tasks.getTaskState(show_temp_mode))
-  {
+void showTemp() {
+  if (!tasks.getTaskState(show_temp_mode)) {
     tasks.startTask(return_to_default_mode);
     tasks.startTask(show_temp_mode);
   }
@@ -635,76 +589,61 @@ void showTemp()
 }
 #endif
 
-void setDisp()
-{
-  disp.show();
-}
+void setDisp() { disp.show(); }
 
 #ifdef USE_CALENDAR
-void showCalendar()
-{
-  if (!tasks.getTaskState(show_calendar_mode))
-  {
+void showCalendar() {
+  if (!tasks.getTaskState(show_calendar_mode)) {
     tasks.startTask(show_calendar_mode);
     disp.showDate(curTime, true);
   }
 
-  if (disp.showDate(curTime))
-  {
+  if (disp.showDate(curTime)) {
     returnToDefMode();
   }
 }
 #endif
 
 #ifdef USE_ALARM
-void checkAlarm()
-{
+void checkAlarm() {
   alarm.tick(curTime);
-  if (alarm.getAlarmState() == ALARM_YES && !tasks.getTaskState(alarm_buzzer))
-  {
+  if (alarm.getAlarmState() == ALARM_YES && !tasks.getTaskState(alarm_buzzer)) {
     runAlarmBuzzer();
   }
 }
 
-void runAlarmBuzzer()
-{
+void runAlarmBuzzer() {
   static uint8_t n = 0;
   static uint8_t k = 0;
   static uint8_t m = 0;
   // "мелодия" пищалки: первая строка - частота, вторая строка - длительность
   static const PROGMEM uint32_t pick[2][8] = {
-      {2000, 0, 2000, 0, 2000, 0, 2000, 0},
-      {70, 70, 70, 70, 70, 70, 70, 510}};
+      {2000, 0, 2000, 0, 2000, 0, 2000, 0}, {70, 70, 70, 70, 70, 70, 70, 510}};
 
-  if (!tasks.getTaskState(alarm_buzzer))
-  {
+  if (!tasks.getTaskState(alarm_buzzer)) {
     tasks.startTask(alarm_buzzer);
     n = 0;
     k = 0;
     m = 0;
-  }
-  else if (alarm.getAlarmState() == ALARM_ON)
-  { // остановка пищалки, если будильник отключен
+  } else if (alarm.getAlarmState() ==
+             ALARM_ON) { // остановка пищалки, если будильник отключен
     tasks.stopTask(alarm_buzzer);
     return;
   }
 
   tone(BUZZER_PIN, pgm_read_dword(&pick[0][n]), pgm_read_dword(&pick[1][n]));
   tasks.setTaskInterval(alarm_buzzer, pgm_read_dword(&pick[1][n]), true);
-  if (++n >= 8)
-  {
+  if (++n >= 8) {
     n = 0;
-    if (++k >= ALARM_DURATION)
-    { // приостановка пищалки через заданное число секунд
+    if (++k >=
+        ALARM_DURATION) { // приостановка пищалки через заданное число секунд
       k = 0;
-      if (++m >= ALARM_REPETITION_COUNT)
-      { // отключение пищалки после заданного количества срабатываний
+      if (++m >= ALARM_REPETITION_COUNT) { // отключение пищалки после заданного
+                                           // количества срабатываний
         tasks.stopTask(alarm_buzzer);
         tasks.setTaskInterval(alarm_buzzer, 50, false);
         alarm.setAlarmState(ALARM_ON);
-      }
-      else
-      {
+      } else {
         tasks.setTaskInterval(alarm_buzzer, ALARM_SNOOZE_DELAY * 1000ul, true);
       }
     }
@@ -713,11 +652,9 @@ void runAlarmBuzzer()
 #endif
 
 #ifdef USE_LIGHT_SENSOR
-void setBrightness()
-{
+void setBrightness() {
 #ifdef USE_SET_BRIGHTNESS_MODE
-  if (tasks.getTaskState(set_brightness_mode))
-  {
+  if (tasks.getTaskState(set_brightness_mode)) {
     return; // в режиме настройки яркости ничего не регулировать
   }
 #endif
@@ -725,12 +662,9 @@ void setBrightness()
   static uint16_t b;
   b = (b * 2 + analogRead(LIGHT_SENSOR_PIN)) / 3;
   uint8_t x = 1;
-  if (b < LIGHT_THRESHOLD)
-  {
+  if (b < LIGHT_THRESHOLD) {
     x = EEPROM.read(MIN_BRIGHTNESS_VALUE);
-  }
-  else if (b > LIGHT_THRESHOLD + 50)
-  {
+  } else if (b > LIGHT_THRESHOLD + 50) {
     x = EEPROM.read(MAX_BRIGHTNESS_VALUE);
   }
   disp.setBrightness(x);
@@ -738,28 +672,23 @@ void setBrightness()
 #endif
 
 #ifdef USE_SET_BRIGHTNESS_MODE
-void showBrightnessSetting()
-{
+void showBrightnessSetting() {
   static uint8_t x = 0;
 
-  if (!tasks.getTaskState(set_brightness_mode))
-  {
+  if (!tasks.getTaskState(set_brightness_mode)) {
     tasks.startTask(set_brightness_mode);
     tasks.startTask(return_to_default_mode);
     x = EEPROM.read(MAX_BRIGHTNESS_VALUE);
 #ifdef USE_LIGHT_SENSOR
-    if (displayMode == DISPLAY_MODE_SET_BRIGHTNESS_MIN)
-    {
+    if (displayMode == DISPLAY_MODE_SET_BRIGHTNESS_MIN) {
       x = EEPROM.read(MIN_BRIGHTNESS_VALUE);
     }
 #endif
   }
 
   // ==== опрос кнопок ===============================
-  if (btnSet.getBtnFlag() > BTN_FLAG_NONE)
-  {
-    switch (displayMode)
-    {
+  if (btnSet.getBtnFlag() > BTN_FLAG_NONE) {
+    switch (displayMode) {
     case DISPLAY_MODE_SET_BRIGHTNESS_MAX:
       EEPROM.update(MAX_BRIGHTNESS_VALUE, x);
       displayMode = DISPLAY_MODE_SHOW_TIME;
@@ -768,11 +697,9 @@ void showBrightnessSetting()
 #ifdef USE_LIGHT_SENSOR
     case DISPLAY_MODE_SET_BRIGHTNESS_MIN:
       EEPROM.update(MIN_BRIGHTNESS_VALUE, x);
-      if (btnSet.getBtnFlag() == BTN_FLAG_NEXT)
-      {
+      if (btnSet.getBtnFlag() == BTN_FLAG_NEXT) {
         displayMode = DISPLAY_MODE_SET_BRIGHTNESS_MAX;
-      }
-      else
+      } else
         displayMode = DISPLAY_MODE_SHOW_TIME;
       stopSetting(set_brightness_mode);
       break;
@@ -783,8 +710,8 @@ void showBrightnessSetting()
     btnSet.setBtnFlag(BTN_FLAG_NONE);
   }
 
-  if ((btnUp.getBtnFlag() == BTN_FLAG_NEXT) || (btnDown.getBtnFlag() == BTN_FLAG_NEXT))
-  {
+  if ((btnUp.getBtnFlag() == BTN_FLAG_NEXT) ||
+      (btnDown.getBtnFlag() == BTN_FLAG_NEXT)) {
     bool dir = btnUp.getBtnFlag() == BTN_FLAG_NEXT;
 #if defined(MAX72XX_7SEGMENT_DISPLAY) || defined(MAX72XX_MATRIX_DISPLAY)
     checkData(x, 15, dir, 0, false);
@@ -804,7 +731,8 @@ void showBrightnessSetting()
 #else
   disp.setBrightness(x);
 #endif
-  bool blink = !blink_flag && !btnUp.isButtonClosed() && !btnDown.isButtonClosed();
+  bool blink =
+      !blink_flag && !btnUp.isButtonClosed() && !btnDown.isButtonClosed();
   bool snr = false;
 #ifdef USE_LIGHT_SENSOR
   snr = true;
@@ -815,13 +743,12 @@ void showBrightnessSetting()
 #endif
 
 // ===================================================
-void showTimeData(uint8_t hour, uint8_t minute)
-{
-  // если наступило время блинка и кнопки Up/Down не нажаты, то стереть соответствующие разряды; при нажатых кнопках Up/Down во время изменения данных ничего не мигает
-  if (!blink_flag && !btnUp.isButtonClosed() && !btnDown.isButtonClosed())
-  {
-    switch (displayMode)
-    {
+void showTimeData(uint8_t hour, uint8_t minute) {
+  // если наступило время блинка и кнопки Up/Down не нажаты, то стереть
+  // соответствующие разряды; при нажатых кнопках Up/Down во время изменения
+  // данных ничего не мигает
+  if (!blink_flag && !btnUp.isButtonClosed() && !btnDown.isButtonClosed()) {
+    switch (displayMode) {
     case DISPLAY_MODE_SET_HOUR:
 #ifdef USE_CALENDAR
     case DISPLAY_MODE_SET_DAY:
@@ -849,7 +776,8 @@ void showTimeData(uint8_t hour, uint8_t minute)
   bool toDate = false;
   bool toColon = false;
 #if defined(USE_CALENDAR)
-  toDate = (displayMode >= DISPLAY_MODE_SET_DAY && displayMode <= DISPLAY_MODE_SET_YEAR);
+  toDate = (displayMode >= DISPLAY_MODE_SET_DAY &&
+            displayMode <= DISPLAY_MODE_SET_YEAR);
   toColon = displayMode != DISPLAY_MODE_SET_YEAR;
 #endif
 #if defined(MAX72XX_MATRIX_DISPLAY) || defined(WS2812_MATRIX_DISPLAY)
@@ -860,8 +788,7 @@ void showTimeData(uint8_t hour, uint8_t minute)
 }
 
 #ifdef USE_ALARM
-void showAlarmState(uint8_t _state)
-{
+void showAlarmState(uint8_t _state) {
 #if defined(TM1637_DISPLAY)
   disp.setDispData(0, 0b01110111); // "A"
   disp.setDispData(1, 0b10111000); // "L:"
@@ -888,14 +815,11 @@ void showAlarmState(uint8_t _state)
 #endif
 #endif
 
-  if (!blink_flag && !btnUp.isButtonClosed() && !btnDown.isButtonClosed())
-  {
+  if (!blink_flag && !btnUp.isButtonClosed() && !btnDown.isButtonClosed()) {
 #if defined(TM1637_DISPLAY) || defined(MAX72XX_7SEGMENT_DISPLAY)
     disp.setDispData(3, 0x00);
 #endif
-  }
-  else
-  {
+  } else {
 #if defined(TM1637_DISPLAY)
     disp.setDispData(3, (_state) ? 0b01011100 : 0b00001000);
 #elif defined(MAX72XX_7SEGMENT_DISPLAY)
@@ -908,27 +832,20 @@ void showAlarmState(uint8_t _state)
 #endif
 
 // ===================================================
-void checkData(uint8_t &dt, uint8_t max, bool toUp, uint8_t min, bool toLoop)
-{
+void checkData(uint8_t &dt, uint8_t max, bool toUp, uint8_t min, bool toLoop) {
   (toUp) ? dt++ : dt--;
-  if ((dt > max) || (min > 0 && dt < min))
-  {
-    if (toLoop)
-    {
+  if ((dt > max) || (min > 0 && dt < min)) {
+    if (toLoop) {
       dt = (toUp) ? min : max;
-    }
-    else
-    {
+    } else {
       dt = (toUp) ? max : min;
     }
   }
 }
 
 // ===================================================
-void setDisplay()
-{
-  switch (displayMode)
-  {
+void setDisplay() {
+  switch (displayMode) {
   case DISPLAY_MODE_SET_HOUR:
   case DISPLAY_MODE_SET_MINUTE:
 #ifdef USE_CALENDAR
@@ -941,23 +858,20 @@ void setDisplay()
   case DISPLAY_MODE_SET_ALARM_MINUTE:
   case DISPLAY_MODE_ALARM_ON_OFF:
 #endif
-    if (!tasks.getTaskState(set_time_mode))
-    {
+    if (!tasks.getTaskState(set_time_mode)) {
       showTimeSetting();
     }
     break;
 #ifdef USE_TEMP_DATA
   case DISPLAY_MODE_SHOW_TEMP:
-    if (!tasks.getTaskState(show_temp_mode))
-    {
+    if (!tasks.getTaskState(show_temp_mode)) {
       showTemp();
     }
     break;
 #endif
 #ifdef USE_CALENDAR
   case DISPLAY_MODE_SHOW_CALENDAR:
-    if (!tasks.getTaskState(show_calendar_mode))
-    {
+    if (!tasks.getTaskState(show_calendar_mode)) {
       showCalendar();
     }
     break;
@@ -967,8 +881,7 @@ void setDisplay()
   case DISPLAY_MODE_SET_BRIGHTNESS_MIN:
 #endif
   case DISPLAY_MODE_SET_BRIGHTNESS_MAX:
-    if (!tasks.getTaskState(set_brightness_mode))
-    {
+    if (!tasks.getTaskState(set_brightness_mode)) {
       showBrightnessSetting();
     }
     break;
@@ -979,8 +892,7 @@ void setDisplay()
 }
 
 // ===================================================
-void setup()
-{
+void setup() {
   // ==== часы =======================================
   Wire.begin();
   clock.setClockMode(false); // 24-часовой режим
@@ -994,7 +906,8 @@ void setup()
 
 // ==== датчики ======================================
 #if defined(USE_NTC)
-  temp_sensor.setADCbitDepth(10); // установить разрядность АЦП вашего МК, для AVR обычно равна 10 бит
+  temp_sensor.setADCbitDepth(
+      10); // установить разрядность АЦП вашего МК, для AVR обычно равна 10 бит
 #endif
   // проверить корректность заданных уровней яркости
   uint8_t x = EEPROM.read(MAX_BRIGHTNESS_VALUE);
@@ -1026,11 +939,13 @@ void setup()
   disp.shutdownAllDevices(false);
 #ifdef MAX72XX_MATRIX_DISPLAY
   disp.setDirection(2); // задайте нужный вам поворот картинки (0-3)
-  // disp.setFlip(true);   // раскомментируйте, если нужно включить отражение картинки по горизонтали
+  // disp.setFlip(true);   // раскомментируйте, если нужно включить отражение
+  // картинки по горизонтали
 #endif
 #endif
 
-// выставить яркость в минимум, чтобы при включении не сверкало максимальной яркостью
+// выставить яркость в минимум, чтобы при включении не сверкало максимальной
+// яркостью
 #if defined(WS2812_MATRIX_DISPLAY)
   FastLED.setBrightness(0);
 #elif defined(MAX72XX_MATRIX_DISPLAY) || defined(MAX72XX_7SEGMENT_DISPLAY)
@@ -1063,7 +978,8 @@ void setup()
 
   rtc_guard = tasks.addTask(50ul, rtcNow);
   blink_timer = tasks.addTask(50ul, blink);
-  return_to_default_mode = tasks.addTask(AUTO_EXIT_TIMEOUT * 1000ul, returnToDefMode, false);
+  return_to_default_mode =
+      tasks.addTask(AUTO_EXIT_TIMEOUT * 1000ul, returnToDefMode, false);
   set_time_mode = tasks.addTask(100ul, showTimeSetting, false);
 #ifdef USE_TEMP_DATA
   show_temp_mode = tasks.addTask(500ul, showTemp, false);
@@ -1072,7 +988,8 @@ void setup()
 #endif
 #endif
 #ifdef USE_CALENDAR
-#if (defined(WS2812_MATRIX_DISPLAY) || defined(MAX72XX_MATRIX_DISPLAY)) && defined(USE_TICKER_FOR_DATE)
+#if (defined(WS2812_MATRIX_DISPLAY) || defined(MAX72XX_MATRIX_DISPLAY)) &&     \
+    defined(USE_TICKER_FOR_DATE)
   uint32_t t = 1000ul / TICKER_SPEED;
 #else
   uint32_t t = 1000ul;
@@ -1096,8 +1013,7 @@ void setup()
 #endif
 }
 
-void loop()
-{
+void loop() {
   checkButton();
   tasks.tick();
   setDisplay();
