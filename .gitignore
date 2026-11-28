@@ -27,6 +27,7 @@ temp/
 
 # Специфичные для KiCad временные файлы и папки
 *.kicad_pcb-lock
+*.kicad_pro.lck
 *.sch-lock
 /build/
 /output/
